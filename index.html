@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000">
+<title>Run HR</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  :root { --z: #444; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #000; color: #eee; font: 16px system-ui, sans-serif; padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom); user-select: none; }
+  #bpm { font-size: 38vw; font-weight: 800; line-height: 1; text-align: center; margin-top: 8vh; color: var(--z); transition: color .5s; }
+  #zone { text-align: center; font-size: 6vw; color: var(--z); font-weight: 600; }
+  .row { display: flex; justify-content: space-around; text-align: center; margin: 4vh 0; }
+  .row div { font-size: 8vw; font-weight: 700; }
+  .row small { display: block; font-size: 3.5vw; color: #888; font-weight: 400; }
+  canvas { width: 100%; height: 22vh; display: block; }
+  #bars { display: flex; gap: 4px; height: 10px; margin: 8px 0 16px; }
+  #bars div { flex: 0 0 auto; border-radius: 3px; min-width: 0; }
+  button { width: 100%; padding: 18px; font-size: 20px; font-weight: 700; border: 0; border-radius: 12px; margin-bottom: 10px; color: #000; background: #eee; }
+  button:disabled { opacity: .35; }
+  #stop { background: #e33; color: #fff; }
+  #status { color: #888; text-align: center; margin: 8px 0; font-size: 14px; }
+  label { color: #888; font-size: 14px; display: flex; justify-content: space-between; align-items: center; margin: 12px 0; }
+  input { width: 80px; font-size: 18px; padding: 6px; background: #111; color: #eee; border: 1px solid #333; border-radius: 6px; text-align: center; }
+  #sessions { list-style: none; padding: 0; margin: 0; font-size: 14px; }
+  #sessions li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #222; }
+  #sessions a { color: #6cf; text-decoration: none; margin-left: 12px; }
+</style>
+</head>
+<body>
+<div id="bpm">--</div>
+<div id="zone">not connected</div>
+<div class="row">
+  <div id="time">0:00<small>time</small></div>
+  <div id="avg">--<small>avg</small></div>
+  <div id="max">--<small>max</small></div>
+</div>
+<canvas id="chart"></canvas>
+<div id="bars"></div>
+<button id="connect">Connect strap</button>
+<button id="start" disabled>Start run</button>
+<button id="stop" hidden>Stop run</button>
+<div id="status"></div>
+<label>Max HR <input id="maxhr" type="number" min="120" max="230"></label>
+<ul id="sessions"></ul>
+
+<script>
+const $ = id => document.getElementById(id);
+const ZONES = [[0.5,'#888','rest'],[0.6,'#4a9','Z1 easy'],[0.7,'#2c5','Z2 aerobic'],[0.8,'#fc0','Z3 tempo'],[0.9,'#f80','Z4 threshold'],[1.01,'#e33','Z5 max']];
+const maxhr = $('maxhr');
+maxhr.value = localStorage.maxhr || 190;
+maxhr.onchange = () => localStorage.maxhr = maxhr.value;
+
+let device, running = false, t0 = 0, samples = [], lastBpm = 0, wake, zoneSecs = [0,0,0,0,0,0];
+
+function zoneOf(bpm) {
+  const pct = bpm / +maxhr.value;
+  return ZONES.findIndex(z => pct < z[0]) + 1 || 6; // 1..6 index into ZONES (0 = below zone1)
+}
+
+function parseHR(dv) {
+  const flags = dv.getUint8(0);
+  return flags & 1 ? dv.getUint16(1, true) : dv.getUint8(1);
+}
+
+async function connect() {
+  try {
+    device = await navigator.bluetooth.requestDevice({ filters: [{ services: ['heart_rate'] }], optionalServices: ['battery_service'] });
+    device.addEventListener('gattserverdisconnected', () => { $('status').textContent = 'disconnected, reconnecting...'; reconnect(); });
+    await subscribe();
+    $('start').disabled = false;
+  } catch (e) { $('status').textContent = e.message; }
+}
+
+async function subscribe() {
+  const server = await device.gatt.connect();
+  const svc = await server.getPrimaryService('heart_rate');
+  const ch = await svc.getCharacteristic('heart_rate_measurement');
+  ch.addEventListener('characteristicvaluechanged', e => onHR(parseHR(e.target.value)));
+  await ch.startNotifications();
+  let batt = '';
+  try { const b = await (await (await server.getPrimaryService('battery_service')).getCharacteristic('battery_level')).readValue(); batt = ` · battery ${b.getUint8(0)}%`; } catch {}
+  $('status').textContent = `connected to ${device.name || 'strap'}${batt}`;
+}
+
+async function reconnect() {
+  for (let i = 0; i < 30 && device && !device.gatt.connected; i++) {
+    try { await subscribe(); return; } catch { await new Promise(r => setTimeout(r, 2000)); }
+  }
+}
+
+function onHR(bpm) {
+  lastBpm = bpm;
+  const zi = zoneOf(bpm), z = ZONES[zi - 1];
+  document.documentElement.style.setProperty('--z', z[1]);
+  $('bpm').textContent = bpm;
+  $('zone').textContent = z[2];
+  if (running) samples.push([Math.round((Date.now() - t0) / 1000), bpm]);
+}
+
+function tick() {
+  if (!running) return;
+  const s = Math.round((Date.now() - t0) / 1000);
+  $('time').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  if (lastBpm) zoneSecs[zoneOf(lastBpm) - 1]++;
+  if (samples.length) {
+    const b = samples.map(x => x[1]);
+    $('avg').textContent = Math.round(b.reduce((a, c) => a + c) / b.length);
+    $('max').textContent = Math.max(...b);
+    draw(b);
+  }
+  $('bars').innerHTML = zoneSecs.map((v, i) => `<div style="flex-basis:${100 * v / s}%;background:${ZONES[i][1]}"></div>`).join('');
+  setTimeout(tick, 1000);
+}
+
+function draw(b) {
+  const c = $('chart'), ctx = c.getContext('2d');
+  c.width = c.clientWidth * devicePixelRatio; c.height = c.clientHeight * devicePixelRatio;
+  const lo = Math.min(...b) - 5, hi = Math.max(...b) + 5;
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.strokeStyle = '#6cf'; ctx.lineWidth = 2 * devicePixelRatio; ctx.beginPath();
+  b.forEach((v, i) => ctx[i ? 'lineTo' : 'moveTo'](i / (b.length - 1 || 1) * c.width, c.height - (v - lo) / (hi - lo) * c.height));
+  ctx.stroke();
+}
+
+async function start() {
+  running = true; t0 = Date.now(); samples = []; zoneSecs = [0,0,0,0,0,0];
+  $('start').hidden = true; $('stop').hidden = false; $('connect').hidden = true;
+  try { wake = await navigator.wakeLock.request('screen'); } catch {}
+  tick();
+}
+
+function stop() {
+  running = false; wake?.release();
+  $('start').hidden = false; $('stop').hidden = true; $('connect').hidden = false;
+  if (samples.length < 5) return;
+  const list = JSON.parse(localStorage.sessions || '[]');
+  list.unshift({ start: t0, samples, maxhr: +maxhr.value });
+  localStorage.sessions = JSON.stringify(list.slice(0, 50)); // ponytail: 50 sessions cap, export to a server if you want history
+  renderSessions();
+}
+
+function renderSessions() {
+  const list = JSON.parse(localStorage.sessions || '[]');
+  $('sessions').innerHTML = list.map((s, i) => {
+    const b = s.samples.map(x => x[1]), d = new Date(s.start), mins = Math.round(s.samples.at(-1)[0] / 60);
+    const csv = 'data:text/csv,' + encodeURIComponent('sec,bpm\n' + s.samples.map(x => x.join(',')).join('\n'));
+    return `<li><span>${d.toLocaleDateString()} ${d.toLocaleTimeString([], {timeStyle:'short'})} · ${mins} min · avg ${Math.round(b.reduce((a, c) => a + c) / b.length)} · max ${Math.max(...b)}</span>
+      <span><a href="${csv}" download="run_${d.toISOString().slice(0,16).replace(/[-:T]/g,'')}.csv">CSV</a><a href="#" data-del="${i}">✕</a></span></li>`;
+  }).join('');
+}
+$('sessions').onclick = e => {
+  if (e.target.dataset.del === undefined) return;
+  e.preventDefault();
+  const list = JSON.parse(localStorage.sessions || '[]'); list.splice(+e.target.dataset.del, 1);
+  localStorage.sessions = JSON.stringify(list); renderSessions();
+};
+
+$('connect').onclick = connect; $('start').onclick = start; $('stop').onclick = stop;
+document.addEventListener('visibilitychange', async () => { // wake lock is dropped when the screen goes off; re-grab it
+  if (running && !document.hidden) try { wake = await navigator.wakeLock.request('screen'); } catch {}
+});
+if (!navigator.bluetooth) $('status').textContent = 'Web Bluetooth not supported — use Chrome on Android';
+renderSessions();
+navigator.serviceWorker?.register('sw.js');
+</script>
+</body>
+</html>
