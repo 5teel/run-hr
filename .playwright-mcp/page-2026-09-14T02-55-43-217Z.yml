@@ -1,0 +1,19 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]: "--"
+  - generic [ref=e3]: not connected
+  - generic [ref=e4]:
+    - generic [ref=e5]:
+      - text: 0:00
+      - generic [ref=e6]: time
+    - generic [ref=e7]:
+      - text: "--"
+      - generic [ref=e8]: avg
+    - generic [ref=e9]:
+      - text: "--"
+      - generic [ref=e10]: max
+  - button "Connect strap" [ref=e13]
+  - button "Start run" [disabled] [ref=e14]
+  - generic [ref=e15]:
+    - text: Max HR
+    - spinbutton "Max HR" [ref=e16]: "190"
+  - list

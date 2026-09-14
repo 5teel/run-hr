@@ -20,3 +20,4 @@ Repurposing an F45 LionHeart chest strap as a personal heart rate monitor with c
 
 ## Learnings
 - **[2026-09-14] USB hub shows nothing for the strap** — the USB connection is charge-only. All data is BLE.
+- **[2026-09-14] Android Chrome picker "stuck scanning"** — Chrome needs the "Nearby devices" permission (Android 12+) and Bluetooth + Location on; a dismissed prompt = endless scan. Also a strict `services:['heart_rate']` filter finds nothing if the strap omits 0x180D from its advert — filter by namePrefix too and keep a "Show all devices" fallback.

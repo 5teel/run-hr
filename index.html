@@ -40,6 +40,7 @@
 <canvas id="chart"></canvas>
 <div id="bars"></div>
 <button id="connect">Connect strap</button>
+<button id="showall" style="background:#333;color:#eee">Show all devices</button>
 <button id="start" disabled>Start run</button>
 <button id="stop" hidden>Stop run</button>
 <div id="status"></div>
@@ -65,9 +66,12 @@ function parseHR(dv) {
   return flags & 1 ? dv.getUint16(1, true) : dv.getUint8(1);
 }
 
-async function connect() {
+async function connect(showAll) {
   try {
-    device = await navigator.bluetooth.requestDevice({ filters: [{ services: ['heart_rate'] }], optionalServices: ['battery_service'] });
+    // ponytail: some straps omit 0x180D from the advert, so also match by name; long-press Connect shows every device
+    const filters = [{ services: ['heart_rate'] }, { namePrefix: 'Lion' }, { namePrefix: 'F45' }, { namePrefix: 'HRM' }, { namePrefix: 'Polar' }, { namePrefix: 'TICKR' }];
+    const opts = showAll ? { acceptAllDevices: true } : { filters };
+    device = await navigator.bluetooth.requestDevice({ ...opts, optionalServices: ['heart_rate', 'battery_service'] });
     device.addEventListener('gattserverdisconnected', () => { $('status').textContent = 'disconnected, reconnecting...'; reconnect(); });
     await subscribe();
     $('start').disabled = false;
@@ -127,14 +131,14 @@ function draw(b) {
 
 async function start() {
   running = true; t0 = Date.now(); samples = []; zoneSecs = [0,0,0,0,0,0];
-  $('start').hidden = true; $('stop').hidden = false; $('connect').hidden = true;
+  $('start').hidden = true; $('stop').hidden = false; $('connect').hidden = $('showall').hidden = true;
   try { wake = await navigator.wakeLock.request('screen'); } catch {}
   tick();
 }
 
 function stop() {
   running = false; wake?.release();
-  $('start').hidden = false; $('stop').hidden = true; $('connect').hidden = false;
+  $('start').hidden = false; $('stop').hidden = true; $('connect').hidden = $('showall').hidden = false;
   if (samples.length < 5) return;
   const list = JSON.parse(localStorage.sessions || '[]');
   list.unshift({ start: t0, samples, maxhr: +maxhr.value });
@@ -158,7 +162,7 @@ $('sessions').onclick = e => {
   localStorage.sessions = JSON.stringify(list); renderSessions();
 };
 
-$('connect').onclick = connect; $('start').onclick = start; $('stop').onclick = stop;
+$('connect').onclick = () => connect(false); $('showall').onclick = () => connect(true); $('start').onclick = start; $('stop').onclick = stop;
 document.addEventListener('visibilitychange', async () => { // wake lock is dropped when the screen goes off; re-grab it
   if (running && !document.hidden) try { wake = await navigator.wakeLock.request('screen'); } catch {}
 });
