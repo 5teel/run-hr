@@ -2,6 +2,8 @@
 
 Repurposing an F45 LionHeart chest strap as a personal heart rate monitor with custom software for runs.
 
+**Status (2026-09-14):** the product is now **Hearty**, a module inside Body Atlas (`C:\Development\Body Atlas`, route `/hearty`). This folder keeps the standalone prototype PWA (still live on GitHub Pages) and the desktop Python tools. New features go in Body Atlas, not here.
+
 ## Hardware facts
 - Strap charges over USB (charge-only cable, no USB data device appears).
 - Strap talks Bluetooth LE, standard Heart Rate Service (0x180D), HR Measurement char 0x2A37.
