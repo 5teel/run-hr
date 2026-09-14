@@ -9,9 +9,14 @@ Repurposing an F45 LionHeart chest strap as a personal heart rate monitor with c
 - PC radio: Intel Wireless Bluetooth (BLE capable).
 
 ## Stack
-- Python 3.13 + `bleak` (BLE). Run from `C:\Development\HR Monitor` in PowerShell.
-- `scan.py` — list nearby BLE devices, flags HR ones.
-- `hr.py` — connect, print live BPM + RR intervals, log to `session_*.csv`.
+- **Phone app (the real product):** `index.html` + `manifest.json` + `sw.js` + `icon.svg` — single-file PWA using Web Bluetooth. Android Chrome only (iOS Safari has no Web Bluetooth). Sessions stored in localStorage, CSV export per run.
+- **Desktop tools:** Python 3.13 + `bleak`. `scan.py` lists BLE devices and flags HR ones; `hr.py` connects, prints live BPM + RR, logs `session_*.csv`.
+
+## Deploy
+- Repo: https://github.com/5teel/run-hr (this folder is its own repo; parent `C:\Development` is a separate repo).
+- GitHub Pages from `master` branch root → https://5teel.github.io/run-hr/
+- Push to `master` = deploy. Web Bluetooth requires HTTPS, so always test on the Pages URL, not file://.
+- Remote is HTTPS (no SSH key on this machine).
 
 ## Learnings
 - **[2026-09-14] USB hub shows nothing for the strap** — the USB connection is charge-only. All data is BLE.
