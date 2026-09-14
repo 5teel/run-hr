@@ -1,2 +1,4 @@
 session_*.csv
 __pycache__/
+.playwright-mcp/
+*.png
